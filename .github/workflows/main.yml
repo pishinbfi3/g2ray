@@ -1,0 +1,60 @@
+name: G2Ray - Get VLESS Config (Manual)
+
+on:
+  workflow_dispatch:  # فقط با کلیک دستی اجرا می‌شه - هیچ schedule ای وجود نداره
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup and run G2Ray
+        id: proxy_setup
+        run: |
+          # نصب ابزارها
+          sudo apt-get update
+          sudo apt-get install -y curl unzip jq uuid-runtime
+
+          # نصب Xray-core
+          curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          unzip -o xray.zip -d xray
+          sudo mv xray/xray /usr/local/bin/
+          sudo chmod +x /usr/local/bin/xray
+          rm -rf xray xray.zip
+
+          # ساخت UUID جدید
+          UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
+          
+          # آپدیت کانفیگ با UUID جدید
+          jq --arg uuid "$UUID" '.inbounds[0].settings.clients[0].id = $uuid' .devcontainer/config.json > config.json
+          mv config.json .devcontainer/config.json
+
+          # اجرای Xray
+          sudo /usr/local/bin/xray -c .devcontainer/config.json &
+          sleep 3
+
+          # گرفتن IP سرور
+          SERVER_IP=$(curl -s ifconfig.me)
+
+          # ساخت لینک VLESS
+          VLESS_LINK="vless://$UUID@$SERVER_IP:443?encryption=none&security=tls&type=xhttp&mode=packet-up&sni=www.speedtest.net&flow=#G2Ray-VLESS"
+
+          echo "VLESS_LINK=$VLESS_LINK" >> $GITHUB_OUTPUT
+          
+          # نمایش لینک در خروجی
+          echo ""
+          echo "=========================================="
+          echo "✅ لینک VLESS تو آماده است:"
+          echo "$VLESS_LINK"
+          echo "=========================================="
+
+      - name: Show VLESS link in summary
+        run: |
+          echo "# 🚀 لینک VLESS شما" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.proxy_setup.outputs.VLESS_LINK }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
