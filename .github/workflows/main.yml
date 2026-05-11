@@ -1,24 +1,24 @@
-name: G2Ray - Get VLESS Config (Manual)
+name: G2Ray - Always On (6 Hours)
 
 on:
-  workflow_dispatch:  # فقط با کلیک دستی اجرا می‌شه - هیچ schedule ای وجود نداره
+  workflow_dispatch:  # فقط دستی اجرا کن
 
 jobs:
-  build:
+  proxy:
     runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 ساعت حداکثر
     
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup and run G2Ray
-        id: proxy_setup
+      - name: Setup Xray
         run: |
           # نصب ابزارها
           sudo apt-get update
           sudo apt-get install -y curl unzip jq uuid-runtime
 
-          # نصب Xray-core
+          # نصب Xray
           curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
           unzip -o xray.zip -d xray
           sudo mv xray/xray /usr/local/bin/
@@ -28,33 +28,52 @@ jobs:
           # ساخت UUID جدید
           UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
           
-          # آپدیت کانفیگ با UUID جدید
+          # آپدیت کانفیگ
           jq --arg uuid "$UUID" '.inbounds[0].settings.clients[0].id = $uuid' .devcontainer/config.json > config.json
           mv config.json .devcontainer/config.json
 
-          # اجرای Xray
-          sudo /usr/local/bin/xray -c .devcontainer/config.json &
-          sleep 3
-
-          # گرفتن IP سرور
+          # گرفتن IP
           SERVER_IP=$(curl -s ifconfig.me)
 
-          # ساخت لینک VLESS
+          # ساخت لینک
           VLESS_LINK="vless://$UUID@$SERVER_IP:443?encryption=none&security=tls&type=xhttp&mode=packet-up&sni=www.speedtest.net&flow=#G2Ray-VLESS"
 
-          echo "VLESS_LINK=$VLESS_LINK" >> $GITHUB_OUTPUT
+          # ذخیره لینک برای نمایش
+          echo "VLESS_LINK=$VLESS_LINK" >> $GITHUB_ENV
           
-          # نمایش لینک در خروجی
+          # نمایش لینک
           echo ""
-          echo "=========================================="
-          echo "✅ لینک VLESS تو آماده است:"
+          echo "═══════════════════════════════════════════════"
+          echo "✅ لینک VLESS (تا ۶ ساعت اعتبار دارد):"
           echo "$VLESS_LINK"
-          echo "=========================================="
+          echo "═══════════════════════════════════════════════"
+          echo ""
+          echo "🚀 سرویس روشن شد. تا ۶ ساعت آینده فعال خواهد ماند."
 
-      - name: Show VLESS link in summary
+          # اجرای Xray در background
+          sudo /usr/local/bin/xray -c .devcontainer/config.json &
+          
+          # خروجی IP و پورت برای یادآوری
+          echo ""
+          echo "📡 اطلاعات سرویس:"
+          echo "   IP: $SERVER_IP"
+          echo "   Port: 443"
+          echo "   Protocol: VLESS + XHTTP + TLS"
+
+      - name: Keep Alive (6 Hours)
         run: |
-          echo "# 🚀 لینک VLESS شما" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.proxy_setup.outputs.VLESS_LINK }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "🔥 سرویس در حال اجراست..."
+          echo "⏰ تا ۶ ساعت دیگر روشن می‌ماند"
+          echo "💡 برای خاموش کردن: روی 'Cancel workflow' در GitHub کلیک کن"
+          echo ""
+          echo "لینک VLESS دوباره:"
+          echo "${{ env.VLESS_LINK }}"
+          echo ""
+          # این خط سرویس را تا ۶ ساعت روشن نگه می‌دارد
+          sleep 21600  # 6 ساعت = 21600 ثانیه
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "⏱️ زمان اجرا به پایان رسید. سرویس در حال خاموش شدن..."
+          sudo pkill xray || true
